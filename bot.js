@@ -9,11 +9,11 @@ const fs = require('fs');
 
 // ========== НАСТРОЙКИ (МЕНЯЙ ЗДЕСЬ) ==========
 const CONFIG = {
-    host: 'grifmcpro.aternos.me',  // Твой IP / домен Aternos
-    port: 25565,                    // Порт (обычно 25565)
+    host: 'botcreatortest.aternos.me',  // Твой IP / домен Aternos
+    port: 23209,                    // Порт (обычно 25565)
     username: 'GrifBot',            // Ник бота
     password: 'botpassword123',     // Пароль (если сервер кракед — оставь пустым)
-    version: '1.20.4',              // Версия Minecraft
+    version: '1.20.1',              // Версия Minecraft
     opChat: true,                   // Писать в /opchat?
     checkInterval: 60000,           // Проверка каждые 60 секунд
     moveInterval: 30000,            // Двигать бота каждые 30 секунд
