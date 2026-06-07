@@ -1,0 +1,13 @@
+{
+  "name": "aternos-bot",
+  "version": "1.0.0",
+  "description": "AFK бот для Aternos Minecraft сервера",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "mineflayer": "^4.14.0",
+    "vec3": "^0.1.8"
+  }
+}
