@@ -1,0 +1,29 @@
+name: Aternos Bot
+
+on:
+  schedule:
+    # Запуск каждые 5 минут (бесплатно, но стабильно)
+    - cron: '*/5 * * * *'
+  workflow_dispatch:  # Возможность запустить вручную
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        
+    - name: Install dependencies
+      run: npm install
+      
+    - name: Run bot
+      run: node bot.js
+      env:
+        # Если пароль для кракеда — храни в секретах
+        MC_PASSWORD: ${{ secrets.MC_PASSWORD }}
