@@ -1,0 +1,4 @@
+node_modules/
+bot_log.json
+*.log
+.DS_Store
