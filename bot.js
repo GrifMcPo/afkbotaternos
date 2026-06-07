@@ -1,6 +1,6 @@
 // ============================================
 // 🤖 ATERNOS БОТ — AFK PROTECTION
-// Работает через GitHub Actions 24/7
+// Исправлена версия: без киков
 // ============================================
 
 const mineflayer = require('mineflayer');
@@ -10,17 +10,15 @@ const fs = require('fs');
 
 const goalBlocks = goals.GoalBlock;
 
-// ========== НАСТРОЙКИ (МЕНЯЙ ЗДЕСЬ) ==========
+// ========== НАСТРОЙКИ ==========
 const CONFIG = {
-    host: 'botcreatortest.aternos.me',  // Твой IP / домен Aternos
-    port: 23209,                         // Порт
-    username: 'GrifMcBot',                 // Ник бота
-    password: '',                        // Пароль (если есть)
-    version: '1.20.1',                   // Версия Minecraft
-    opChat: true,                        // Писать в /opchat?
-    checkInterval: 60000,                // Проверка каждые 60 секунд
-    moveInterval: 30000,                 // Двигать бота каждые 30 секунд
-    logFile: 'bot_log.json'              // Файл с логами
+    host: 'botcreatortest.aternos.me',
+    port: 23209,
+    username: 'GrifMcBot',
+    password: '',
+    version: '1.20.4',
+    moveInterval: 45000,        // Движение каждые 45 секунд
+    logFile: 'bot_log.json'
 };
 
 // ========== ПЕРЕМЕННЫЕ ==========
@@ -28,51 +26,27 @@ let bot = null;
 let startTime = Date.now();
 let totalDistance = 0;
 let lastPos = null;
-let reconnectAttempts = 0;
 let moving = false;
-let walkingTimer = null;
 let pathIndex = 0;
 let mcData = null;
+let reconnectAttempts = 0;
+let walkingTimer = null;
+let isConnecting = false;
 
-// Ленивые точки для ходьбы
+// Точки для ходьбы (безопасные, в пределах спавна)
 const waypoints = [
-    {x: 0, y: 64, z: 0},
-    {x: 5, y: 64, z: 0},
-    {x: 5, y: 64, z: 5},
-    {x: 0, y: 64, z: 5},
-    {x: -5, y: 64, z: 5},
-    {x: -5, y: 64, z: 0},
-    {x: -5, y: 64, z: -5},
-    {x: 0, y: 64, z: -5},
-    {x: 5, y: 64, z: -5}
+    {x: 0, z: 0},
+    {x: 3, z: 0},
+    {x: 3, z: 3},
+    {x: 0, z: 3},
+    {x: -3, z: 3},
+    {x: -3, z: 0},
+    {x: -3, z: -3},
+    {x: 0, z: -3},
+    {x: 3, z: -3}
 ];
 
-// ========== ЗАГРУЗКА / СОХРАНЕНИЕ ЛОГОВ ==========
-function loadLogs() {
-    try {
-        if (fs.existsSync(CONFIG.logFile)) {
-            const data = JSON.parse(fs.readFileSync(CONFIG.logFile));
-            totalDistance = data.totalDistance || 0;
-            startTime = data.startTime || Date.now();
-            console.log(`📂 Загружено: пройдено ${totalDistance.toFixed(1)} м, время в игре ${formatTime(Date.now() - startTime)}`);
-        }
-    } catch(e) {
-        console.log('📂 Новые логи');
-    }
-}
-
-function saveLogs() {
-    try {
-        const logs = {
-            totalDistance: totalDistance,
-            startTime: startTime,
-            lastUpdate: Date.now()
-        };
-        fs.writeFileSync(CONFIG.logFile, JSON.stringify(logs, null, 2));
-    } catch(e) {}
-}
-
-// ========== ФОРМАТИРОВАНИЕ ВРЕМЕНИ ==========
+// ========== ФУНКЦИИ ==========
 function formatTime(ms) {
     const seconds = Math.floor(ms / 1000);
     const hours = Math.floor(seconds / 3600);
@@ -81,55 +55,86 @@ function formatTime(ms) {
     return `${hours}ч ${minutes}м ${secs}с`;
 }
 
-// ========== ОТПРАВКА СТАТИСТИКИ В ЧАТ ==========
-function sendStats() {
-    if (!bot || !bot.player) return;
-    
+function loadLogs() {
+    try {
+        if (fs.existsSync(CONFIG.logFile)) {
+            const data = JSON.parse(fs.readFileSync(CONFIG.logFile));
+            totalDistance = data.totalDistance || 0;
+            startTime = data.startTime || Date.now();
+            console.log(`📂 Загружено: пройдено ${totalDistance.toFixed(1)} м`);
+        }
+    } catch(e) {}
+}
+
+function saveLogs() {
+    try {
+        fs.writeFileSync(CONFIG.logFile, JSON.stringify({
+            totalDistance: totalDistance,
+            startTime: startTime,
+            lastUpdate: Date.now()
+        }, null, 2));
+    } catch(e) {}
+}
+
+// ========== БЕЗОПАСНАЯ ОТПРАВКА СООБЩЕНИЯ ==========
+function safeChat(msg) {
+    if (!bot || !bot._client) return;
+    try {
+        // Убираем все спецсимволы, оставляем только буквы, цифры, пробелы и базовые знаки
+        const cleanMsg = msg.replace(/[^a-zA-Zа-яА-Я0-9\s\.\,\!\?\-\/]/g, '');
+        if (cleanMsg.length > 0 && cleanMsg.length < 256) {
+            bot.chat(cleanMsg);
+            console.log(`💬 Отправлено: ${cleanMsg.substring(0, 50)}`);
+        }
+    } catch(e) {
+        console.log('⚠️ Не удалось отправить сообщение');
+    }
+}
+
+// ========== ПОКАЗ СТАТИСТИКИ (БЕЗ ОПЧАТА) ==========
+function showStats() {
     const elapsed = Date.now() - startTime;
     const timeStr = formatTime(elapsed);
-    
-    const statsMsg = `§e[GrifBot] §7Статистика: §fВремя §a${timeStr} §7| Пройдено §a${totalDistance.toFixed(1)}§7 м`;
-    
-    if (CONFIG.opChat) {
-        bot.chat(`/opchat ${statsMsg}`);
-    } else {
-        bot.chat(statsMsg);
-    }
-    
-    console.log(`📊 ${statsMsg}`);
+    const msg = `Bot stats: Online ${timeStr}, walked ${totalDistance.toFixed(1)}m`;
+    console.log(`📊 ${msg}`);
+    // Не шлём в чат, чтобы не кикало
 }
 
 // ========== ДВИЖЕНИЕ БОТА ==========
 function startWalking() {
-    if (!bot || !bot.pathfinder || moving) return;
-    if (!mcData) return;
+    if (!bot || !bot.pathfinder || moving || !mcData) {
+        return;
+    }
     
     moving = true;
     const waypoint = waypoints[pathIndex % waypoints.length];
-    
-    // Ищем ближайший безопасный блок
-    const y = Math.floor(bot.entity.position.y);
-    const targetY = Math.max(y - 2, 60);
+    const currentY = Math.floor(bot.entity.position.y);
+    const targetY = Math.max(currentY - 1, 60);
     
     const target = vec3(waypoint.x, targetY, waypoint.z);
     
-    // Настраиваем движения
-    const movements = new Movements(bot, mcData);
-    movements.allowParkour = true;
-    movements.allowSprinting = true;
-    bot.pathfinder.setMovements(movements);
-    
-    bot.pathfinder.setGoal(new goalBlocks(target.x, target.y, target.z));
-    
-    const goalCheck = setInterval(() => {
-        if (!bot || !bot.pathfinder) {
-            clearInterval(goalCheck);
-            return;
-        }
-        const goal = bot.pathfinder.goal;
-        if (goal && goal.x === target.x && goal.z === target.z) {
-            clearInterval(goalCheck);
-            setTimeout(() => {
+    try {
+        const movements = new Movements(bot, mcData);
+        movements.allowParkour = false;
+        movements.allowSprinting = false;
+        movements.canDig = false;
+        bot.pathfinder.setMovements(movements);
+        bot.pathfinder.setGoal(new goalBlocks(target.x, target.y, target.z));
+        
+        // Ждём прибытия
+        const checkInterval = setInterval(() => {
+            if (!bot || !bot.entity) {
+                clearInterval(checkInterval);
+                return;
+            }
+            
+            const dist = Math.sqrt(
+                Math.pow(bot.entity.position.x - target.x, 2) +
+                Math.pow(bot.entity.position.z - target.z, 2)
+            );
+            
+            if (dist < 1.5) {
+                clearInterval(checkInterval);
                 moving = false;
                 pathIndex++;
                 
@@ -138,7 +143,7 @@ function startWalking() {
                     const dx = bot.entity.position.x - lastPos.x;
                     const dz = bot.entity.position.z - lastPos.z;
                     const moved = Math.sqrt(dx*dx + dz*dz);
-                    if (moved > 0.5) {
+                    if (moved > 0.3 && moved < 10) {
                         totalDistance += moved;
                         saveLogs();
                         console.log(`🚶 +${moved.toFixed(1)} м, всего: ${totalDistance.toFixed(1)} м`);
@@ -146,70 +151,68 @@ function startWalking() {
                 }
                 lastPos = {x: bot.entity.position.x, z: bot.entity.position.z};
                 
-                // Периодически показываем статистику
-                if (pathIndex % 10 === 0) {
-                    sendStats();
+                // Показываем статистику раз в 20 шагов
+                if (pathIndex % 20 === 0) {
+                    showStats();
                 }
-                
-                // Задержка перед следующим движением
-                setTimeout(() => {
-                    if (bot && bot.pathfinder && !moving) {
-                        startWalking();
-                    }
-                }, 2000);
-            }, 1000);
-        }
-    }, 500);
-    
-    // Таймаут на случай ошибки
-    setTimeout(() => {
-        clearInterval(goalCheck);
-        if (moving) {
-            moving = false;
-            if (bot && bot.pathfinder) {
-                bot.pathfinder.setGoal(null);
             }
-            setTimeout(() => {
-                if (bot && bot.pathfinder && !moving) startWalking();
-            }, 3000);
-        }
-    }, 15000);
+        }, 1000);
+        
+        // Таймаут на случай застревания
+        setTimeout(() => {
+            clearInterval(checkInterval);
+            if (moving) {
+                moving = false;
+                if (bot && bot.pathfinder) {
+                    bot.pathfinder.setGoal(null);
+                }
+            }
+        }, 15000);
+        
+    } catch(e) {
+        console.log('⚠️ Ошибка движения:', e.message);
+        moving = false;
+    }
 }
 
 // ========== ПОДКЛЮЧЕНИЕ К СЕРВЕРУ ==========
 function connect() {
+    if (isConnecting) return;
+    isConnecting = true;
+    
     console.log(`🔌 Подключение к ${CONFIG.host}:${CONFIG.port}...`);
     
     const options = {
         host: CONFIG.host,
         port: CONFIG.port,
         username: CONFIG.username,
-        version: CONFIG.version
+        version: CONFIG.version,
+        viewDistance: 'tiny',
+        skipValidation: true
     };
     
-    if (CONFIG.password) {
-        options.password = CONFIG.password;
-    }
+    if (CONFIG.password) options.password = CONFIG.password;
     
     bot = mineflayer.createBot(options);
     
-    // Подключаем pathfinder
     bot.loadPlugin(pathfinder);
     
     bot.once('spawn', () => {
         console.log('📍 Бот появился в мире');
+        isConnecting = false;
         
-        // Получаем данные о блоках
-        mcData = require('minecraft-data')(bot.version);
+        if (!mcData) {
+            mcData = require('minecraft-data')(bot.version);
+        }
         
         lastPos = {x: bot.entity.position.x, z: bot.entity.position.z};
         
-        // Запускаем движение после небольшой задержки
+        // Задержка перед первым движением
         setTimeout(() => {
-            if (bot && bot.pathfinder) {
+            if (bot && bot.pathfinder && !moving) {
                 startWalking();
             }
-        }, 3000);
+        }, 5000);
     });
     
     bot.on('login', () => {
@@ -220,103 +223,73 @@ function connect() {
         // Очищаем старый таймер
         if (walkingTimer) clearInterval(walkingTimer);
         
-        // Периодически проверяем, нужно ли двигаться
+        // Запускаем периодическое движение
         walkingTimer = setInterval(() => {
-            if (bot && bot.pathfinder && !moving) {
+            if (bot && bot.pathfinder && !moving && bot.entity) {
                 startWalking();
             }
         }, CONFIG.moveInterval);
         
-        // Периодическая проверка статуса
+        // Периодический лог в консоль (не в чат!)
         setInterval(() => {
-            if (bot && bot.player) {
-                console.log(`❤️ Здоровье: ${bot.player.health}, Еда: ${bot.player.food}`);
+            if (bot && bot.entity) {
+                showStats();
             }
-        }, CONFIG.checkInterval);
-        
-        // Отправляем приветствие
-        setTimeout(() => {
-            const elapsed = Date.now() - startTime;
-            const welcomeMsg = `§a[GrifBot] §7Бот запущен! Время: §a${formatTime(elapsed)}§7, пройдено: §a${totalDistance.toFixed(1)}§7 м`;
-            if (CONFIG.opChat) {
-                bot.chat(`/opchat ${welcomeMsg}`);
-            } else {
-                bot.chat(welcomeMsg);
-            }
-        }, 5000);
-    });
-    
-    bot.on('chat', (username, message) => {
-        if (username === CONFIG.username) return;
-        
-        const lowerMsg = message.toLowerCase();
-        
-        // Ответ на запрос статистики
-        if ((lowerMsg.includes('бот') || lowerMsg.includes('grifbot')) && 
-            (lowerMsg.includes('стат') || lowerMsg.includes('stat') || lowerMsg.includes('сколько'))) {
-            const elapsed = Date.now() - startTime;
-            const response = `§e[GrifBot] §7В игре §a${formatTime(elapsed)}§7, пройдено §a${totalDistance.toFixed(1)}§7 м`;
-            setTimeout(() => {
-                if (CONFIG.opChat) {
-                    bot.chat(`/opchat ${response}`);
-                } else {
-                    bot.chat(response);
-                }
-            }, 1000);
-        }
-        
-        // Приветствие
-        if (lowerMsg.includes('привет бот') || lowerMsg.includes('hi bot')) {
-            setTimeout(() => {
-                if (CONFIG.opChat) {
-                    bot.chat(`/opchat §a[GrifBot] §7Привет, ${username}!`);
-                } else {
-                    bot.chat(`Привет, ${username}!`);
-                }
-            }, 1000);
-        }
+        }, 300000); // каждые 5 минут
     });
     
     bot.on('error', (err) => {
         console.error('❌ Ошибка:', err.message);
+        isConnecting = false;
     });
     
     bot.on('end', (reason) => {
-        console.log(`🔴 Отключён: ${reason || 'неизвестная причина'}`);
+        console.log(`🔴 Отключён: ${reason || 'неизвестно'}`);
+        isConnecting = false;
         if (walkingTimer) clearInterval(walkingTimer);
         moving = false;
         
         reconnectAttempts++;
-        const delay = Math.min(30000, reconnectAttempts * 5000);
+        const delay = Math.min(30000, reconnectAttempts * 3000);
         console.log(`🔄 Переподключение через ${delay/1000} сек...`);
         
         setTimeout(() => {
-            connect();
+            if (!isConnecting) connect();
         }, delay);
     });
     
     bot.on('kicked', (reason) => {
-        console.log(`👢 Кикнут: ${reason}`);
+        let reasonText = typeof reason === 'string' ? reason : JSON.stringify(reason);
+        console.log(`👢 Кикнут: ${reasonText.substring(0, 100)}`);
+        isConnecting = false;
         if (walkingTimer) clearInterval(walkingTimer);
         moving = false;
-        setTimeout(() => connect(), 10000);
+        
+        // При кике ждём дольше
+        const delay = 15000;
+        console.log(`🔄 Переподключение через ${delay/1000} сек...`);
+        setTimeout(() => {
+            if (!isConnecting) connect();
+        }, delay);
     });
 }
 
-// ========== ОБНОВЛЕННЫЙ package.json ==========
 // ========== ЗАПУСК ==========
 loadLogs();
 connect();
 
-// Сохраняем логи при выходе
 process.on('SIGINT', () => {
     saveLogs();
-    console.log('👋 Бот остановлен, логи сохранены');
+    console.log('👋 Бот остановлен');
     process.exit();
 });
 
 process.on('uncaughtException', (err) => {
-    console.error('💥 Непойманная ошибка:', err.message);
+    console.error('💥 Ошибка:', err.message);
     saveLogs();
-    setTimeout(() => connect(), 10000);
+    isConnecting = false;
+    moving = false;
+    setTimeout(() => {
+        if (!isConnecting) connect();
+    }, 10000);
 });
