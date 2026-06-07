@@ -16,7 +16,7 @@ const CONFIG = {
     port: 23209,
     username: 'GrifMcBot',
     password: '',
-    version: '1.20.4',
+    version: '1.20.1',
     moveInterval: 45000,        // Движение каждые 45 секунд
     logFile: 'bot_log.json'
 };
