@@ -1,7 +1,7 @@
 {
   "name": "aternos-bot",
   "version": "1.0.0",
-  "description": "AFK бот для Aternos Minecraft сервера",
+  "description": "AFK бот для Aternos",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js"
